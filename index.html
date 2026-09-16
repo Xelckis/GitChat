@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Git Chat</title>
+	<style>
+		:root {
+			--bg-color: #f4f4f9;
+			--text-color: #333;
+			--border-color: #ddd;
+			--primary-color: #2c3e50;
+		}
+
+		* {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+		}
+
+		body {
+			background-color: var(--bg-color);
+			color: var(--text-color);
+			display: flex;
+			justify-content: center;
+			height: 100vh;
+		}
+
+		#chat-container {
+			width: 100%;
+			max-width: 800px;
+			background: #fff;
+			display: flex;
+			flex-direction: column;
+			border-left: 1px solid var(--border-color);
+			border-right: 1px solid var(--border-color);
+		}
+
+		#messages {
+			flex-grow: 1;
+			padding: 20px;
+			overflow-y: auto;
+			display: flex;
+			flex-direction: column;
+			gap: 15px;
+		}
+
+		.message {
+			background: var(--bg-color);
+			padding: 12px 16px;
+			border-radius: 6px;
+			max-width: 80%;
+			align-self: flex-start;
+			border: 1px solid var(--border-color);
+		}
+
+		.message strong {
+			display: block;
+			font-size: 0.85em;
+			color: #666;
+			margin-bottom: 5px;
+		}
+
+		#chat-form {
+			display: flex;
+			padding: 15px;
+			background: #fff;
+			border-top: 1px solid var(--border-color);
+			gap: 10px;
+		}
+
+		input[type="text"] {
+			flex-grow: 1;
+			padding: 10px 15px;
+			border: 1px solid var(--border-color);
+			border-radius: 4px;
+			outline: none;
+			font-size: 1em;
+		}
+
+		input[type="text"]:focus {
+			border-color: var(--primary-color);
+		}
+
+		button {
+			padding: 10px 20px;
+			background: var(--primary-color);
+			color: #fff;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+			font-size: 1em;
+			transition: background 0.2s;
+		}
+
+		button:hover {
+			background: #1a252f;
+		}
+	</style>
+</head>
+
+<body>
+
+	<div id="chat-container">
+		<div id="messages"></div>
+		<form id="chat-form">
+			<input type="text" id="message-input" placeholder="Escreva o seu Commit..." autocomplete="off"
+				required>
+			<button type="submit">Enviar</button>
+		</form>
+	</div>
+	<script>
+		const messagesDiv = document.getElementById('messages');
+		const form = document.getElementById('chat-form');
+		const msgInput = document.getElementById('message-input');
+
+		let currentPage = 1;
+		let isLoading = false;
+		let hasMore = true;
+
+		function createMessageElement(data) {
+			const msgEl = document.createElement('div');
+			msgEl.className = 'message';
+			msgEl.innerHTML = `<strong>${data.AuthorName || 'Desconhecido'}</strong>`;
+
+			if (data.Message) {
+				const textP = document.createElement('p');
+				textP.textContent = data.Message;
+				msgEl.appendChild(textP);
+			}
+			return msgEl;
+		}
+
+		async function loadHistory(page) {
+			if (isLoading || !hasMore) return;
+			isLoading = true;
+
+			try {
+				const response = await fetch(`/history?page=${page}`);
+				const commits = await response.json();
+
+				if (!commits || commits.length === 0) {
+					hasMore = false;
+					isLoading = false;
+					return;
+				}
+
+				const scrollPos = messagesDiv.scrollHeight - messagesDiv.scrollTop;
+
+				commits.forEach(commit => {
+					const msgEl = createMessageElement(commit);
+					messagesDiv.prepend(msgEl);
+				});
+
+				if (page === 1) {
+					messagesDiv.scrollTop = messagesDiv.scrollHeight;
+				} else {
+					messagesDiv.scrollTop = messagesDiv.scrollHeight - scrollPos;
+				}
+
+				currentPage++;
+			} catch (err) {
+				console.error("Erro ao buscar histórico:", err);
+			}
+			isLoading = false;
+		}
+
+		messagesDiv.addEventListener('scroll', () => {
+			if (messagesDiv.scrollTop === 0) {
+				loadHistory(currentPage);
+			}
+		});
+
+		const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+		const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+
+		ws.onmessage = (event) => {
+			try {
+				const data = JSON.parse(event.data);
+				const msgEl = createMessageElement(data);
+				messagesDiv.appendChild(msgEl);
+
+				if (messagesDiv.scrollHeight - messagesDiv.scrollTop <= messagesDiv.clientHeight + 100) {
+					messagesDiv.scrollTop = messagesDiv.scrollHeight;
+				}
+			} catch (e) {
+				console.error("Mensagem em formato desconhecido");
+			}
+		};
+
+
+		form.onsubmit = async (e) => {
+			e.preventDefault();
+			const formData = new FormData();
+			formData.append('message', msgInput.value);
+
+			try {
+				const response = await fetch('/message', {method: 'POST', body: formData});
+				if (response.ok) {
+					msgInput.value = '';
+				}
+			} catch (err) {
+				console.error("Erro de rede:", err);
+			}
+		};
+
+
+		loadHistory(1);
+	</script>
+
+</body>
+
+</html>
